@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>JUHU APOCALYPSE • RTO Fixed</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>JUHU APOCALYPSE</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, orientation=landscape">
 <style>
   body { 
     margin:0; background:#0a0f1f; display:flex; justify-content:center; align-items:center; 
@@ -14,22 +14,32 @@
     box-shadow:0 0 40px #00ffcc; max-width:100%; max-height:100%;
   }
   #overlay {
-    position:absolute; top:30px; left:50%; transform:translateX(-50%);
-    width:100%; max-width:780px; pointer-events:none; z-index:10;
+    position:absolute; top:15px; left:50%; transform:translateX(-50%);
+    width:100%; max-width:720px; pointer-events:none; z-index:10;
     display:flex; justify-content:center;
   }
   #caption {
     background:rgba(10,15,35,0.92);
-    padding:14px 35px;
-    border:4px solid #00ffcc;
-    border-radius:12px;
-    font-size:26px;
-    line-height:1.35;
+    padding:10px 25px;
+    border:3px solid #00ffcc;
+    border-radius:10px;
+    font-size:22px;
+    line-height:1.4;
     color:#00ffcc;
-    text-shadow:0 0 12px #00ffcc;
+    text-shadow:0 0 10px #00ffcc;
     text-align:center;
-    box-shadow:0 0 25px #00ffcc;
+    box-shadow:0 0 20px #00ffcc;
     white-space:pre-line;
+    max-width:90%;
+  }
+
+  /* Smaller caption on mobile */
+  @media (max-width: 768px) {
+    #caption {
+      font-size: 18px;
+      padding: 8px 18px;
+      top: 10px;
+    }
   }
 </style>
 </head>
@@ -42,7 +52,7 @@
 </div>
 
 <script>
-// ============== JUHU APOCALYPSE – RTO FIXED (Arrives ONLY ONCE at 400km) ==============
+// ============== JUHU APOCALYPSE – FINAL FIXED VERSION ==============
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -84,14 +94,14 @@ let keys = {};
 const GROUND = 380;
 const GRAVITY = 0.65;
 
-// RTO - NOW ONLY ONCE at 400km with cinematic moment
+// RTO - STRICTLY ONCE + SLOWER CINEMATIC
+let rtoTriggered = false;   // ← This prevents multiple triggers
 let rto = { 
   active: false, 
   x: WIDTH + 120, 
   y: 228, 
-  phase: 'normal',     // normal → stopped → shocked → flying
-  timer: 0,
-  zoom: 1.0
+  phase: 'normal',
+  timer: 0
 };
 
 function typeCaption(text, speed = 45) {
@@ -115,7 +125,7 @@ function changeScene(newScene) {
     roadOffset = 0;
     distance = 0;
     rto.active = false;
-    typeCaption("HEADING TO JUHU BEACH\nTAP RIGHT = SPEED UP\nTAP LEFT = BRAKE\n\nTAP SCREEN TO PLAY", 55);
+    typeCaption("HEADING TO JUHU BEACH\nTAP RIGHT = SPEED UP\nTAP LEFT = BRAKE", 55);
   }
   if (newScene === 'getdown') typeCaption("GOTTA FIGHT GUYS\n\nTAP or PRESS ENTER", 35);
   if (newScene === 'fight') typeCaption("4 SURVIVORS ARMED\n\nTAP or PRESS ENTER", 35);
@@ -131,22 +141,21 @@ function update() {
   gameFrame++;
 
   if (scene === 'driving') {
-    // Controls (keyboard + mobile already handled below)
     if (keys['ArrowUp'] || keys['ArrowRight']) carSpeed = Math.min(carSpeed + 0.32, 13.5);
     if (keys['ArrowLeft']) carSpeed = Math.max(carSpeed - 0.45, 2);
 
     roadOffset -= carSpeed * 2.4;
     distance += carSpeed * 0.048;
 
-    // === RTO ONLY ONCE at ~400 km ===
-    if (distance > 400 && !rto.active) {
+    // === RTO TRIGGER - ONLY ONCE at 400km ===
+    if (distance > 400 && !rtoTriggered && !rto.active) {
+      rtoTriggered = true;
       rto.active = true;
       rto.phase = 'normal';
       rto.x = WIDTH + 80;
       rto.y = 228;
       rto.timer = Date.now();
-      rto.zoom = 1.0;
-      carSpeed = 1.8;           // slow down naturally
+      carSpeed = 1.8;
       horn.currentTime = 0;
       horn.play();
     }
@@ -154,46 +163,42 @@ function update() {
     if (rto.active) {
       const elapsed = Date.now() - rto.timer;
 
-      if (rto.phase === 'normal' && elapsed > 900) {
+      if (rto.phase === 'normal' && elapsed > 1200) {     // slower
         rto.phase = 'stopped';
-        carSpeed = 0;                     // car fully stops
+        carSpeed = 0;
       }
-      if (rto.phase === 'stopped' && elapsed > 2800) {
+      if (rto.phase === 'stopped' && elapsed > 3800) {    // slower
         rto.phase = 'shocked';
         horn.currentTime = 0;
         horn.play();
       }
-      if (rto.phase === 'shocked' && elapsed > 4200) {
+      if (rto.phase === 'shocked' && elapsed > 5800) {    // slower
         rto.phase = 'flying';
-        carSpeed = 11;                    // suddenly speed off
+        carSpeed = 11;
       }
 
-      // Movement logic per phase
       if (rto.phase === 'normal' || rto.phase === 'stopped') {
-        rto.x -= 1.2;
-      } 
-      else if (rto.phase === 'shocked') {
-        rto.x += 0.8;
-        rto.y -= 0.6;
-      } 
-      else if (rto.phase === 'flying') {
-        rto.x += carSpeed * 1.1;
-        rto.y -= 3.2;
-        rto.zoom = Math.max(0.6, rto.zoom - 0.008);
-        if (rto.y < -150) rto.active = false;   // remove after flying away
+        rto.x -= 1.1;
+      } else if (rto.phase === 'shocked') {
+        rto.x += 0.6;
+        rto.y -= 0.5;
+      } else if (rto.phase === 'flying') {
+        rto.x += carSpeed * 1.2;
+        rto.y -= 3.5;
+        if (rto.y < -180) rto.active = false;
       }
     }
 
     if (Date.now() - startTime > 20000) changeScene('blackout1');
   }
 
-  // Blackout fades
+  // Blackouts
   if (scene === 'blackout1' || scene === 'blackout2') {
     fade += 0.13;
     if (fade >= 1) changeScene(scene === 'blackout1' ? 'getdown' : 'fight');
   }
 
-  // Gameplay (same as before)
+  // Gameplay
   if (scene === 'gameplay' && gameRunning) {
     if (keys['ArrowLeft']) player.x -= 5.8;
     if (keys['ArrowRight']) player.x += 5.8;
@@ -237,7 +242,7 @@ function update() {
   }
 }
 
-// ====================== DRAW ======================
+// Draw function remains same as before (only small change in RTO zoom removed for simplicity)
 function draw() {
   ctx.clearRect(0, 0, WIDTH, HEIGHT);
 
@@ -259,50 +264,31 @@ function draw() {
     ctx.fillStyle = grad; ctx.fillRect(0,0,WIDTH,HEIGHT);
     ctx.fillStyle = '#1a2538'; ctx.fillRect(0,310,WIDTH,HEIGHT);
 
-    // Yellow dashed center line
-    ctx.strokeStyle = '#ffdd44';
-    ctx.lineWidth = 7;
+    ctx.strokeStyle = '#ffdd44'; ctx.lineWidth = 7;
     for (let i = -180; i < WIDTH + 180; i += 82) {
       let x = (i + roadOffset) % 168 - 25;
-      ctx.beginPath();
-      ctx.moveTo(x, 370);
-      ctx.lineTo(x + 54, 370);
-      ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x, 370); ctx.lineTo(x + 54, 370); ctx.stroke();
     }
 
-    // Thin side lines
-    ctx.strokeStyle = '#ffffff66';
-    ctx.lineWidth = 2.4;
+    ctx.strokeStyle = '#ffffff66'; ctx.lineWidth = 2.4;
     for (let i = -120; i < WIDTH + 120; i += 37) {
       let x = (i + roadOffset * 2.3) % 82 - 18;
       ctx.beginPath(); ctx.moveTo(x, 323); ctx.lineTo(x + 26, 323); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(x, 412); ctx.lineTo(x + 26, 412); ctx.stroke();
     }
 
-    // Draw Car
     ctx.save();
     ctx.translate(255, 275);
     if (carSpeed > 8) ctx.scale(1.04, 0.97);
     if (driveImg.complete) ctx.drawImage(driveImg, -135, -92, 310, 175);
     ctx.restore();
 
-    // RTO with cinematic zoom when stopped
-    if (rto.active && rto.phase !== 'flying') {
-      let zoom = (rto.phase === 'stopped') ? 1.35 : 1.0;
-      let drawX = rto.x;
-      let drawY = rto.y - (rto.phase === 'stopped' ? 25 : 0);
-
-      ctx.save();
-      ctx.translate(drawX + 42, drawY + 65);
-      ctx.scale(zoom, zoom);
-      ctx.translate(-42, -65);
-
+    // RTO Draw
+    if (rto.active) {
       let img = (rto.phase === 'shocked' || rto.phase === 'flying') ? rtoShockedImg : rtoImg;
-      if (img.complete) ctx.drawImage(img, 0, 0, 85, 125);
-      ctx.restore();
+      if (img.complete) ctx.drawImage(img, rto.x, rto.y, 85, 125);
     }
 
-    // Distance
     ctx.font = '24px Courier New';
     ctx.fillStyle = '#00ffcc';
     ctx.fillText(`DISTANCE: ${Math.floor(distance)} km`, 45, 65);
@@ -395,7 +381,6 @@ document.addEventListener('keydown', e => {
 
 document.addEventListener('keyup', e => keys[e.key] = false);
 
-// Mobile Touch (same as before)
 canvas.addEventListener('touchstart', e => {
   e.preventDefault();
   const rect = canvas.getBoundingClientRect();
@@ -427,7 +412,6 @@ canvas.addEventListener('click', () => {
   }
 });
 
-// ====================== START ======================
 changeScene('start');
 typeCaption("MUMBAI 2026\nYOU ARE DRIVING OFF TO JUHU BEACH...\n\nPRESS SPACE or TAP TO START", 55);
 
