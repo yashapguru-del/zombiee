@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>JUHU APOCALYPSE • RTO Fixed</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<style>
+  body { 
+    margin:0; background:#0a0f1f; display:flex; justify-content:center; align-items:center; 
+    height:100vh; font-family:'Courier New', monospace; overflow:hidden; touch-action:none;
+  }
+  canvas { 
+    background:#0a0f1f; border:8px solid #00ffcc; image-rendering:pixelated; 
+    box-shadow:0 0 40px #00ffcc; max-width:100%; max-height:100%;
+  }
+  #overlay {
+    position:absolute; top:30px; left:50%; transform:translateX(-50%);
+    width:100%; max-width:780px; pointer-events:none; z-index:10;
+    display:flex; justify-content:center;
+  }
+  #caption {
+    background:rgba(10,15,35,0.92);
+    padding:14px 35px;
+    border:4px solid #00ffcc;
+    border-radius:12px;
+    font-size:26px;
+    line-height:1.35;
+    color:#00ffcc;
+    text-shadow:0 0 12px #00ffcc;
+    text-align:center;
+    box-shadow:0 0 25px #00ffcc;
+    white-space:pre-line;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="game" width="960" height="540"></canvas>
+
+<div id="overlay">
+  <div id="caption"></div>
+</div>
+
+<script>
+// ============== JUHU APOCALYPSE – RTO FIXED (Arrives ONLY ONCE at 400km) ==============
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const captionEl = document.getElementById('caption');
+
+let scene = 'start';
+let fade = 0;
+let gameFrame = 0;
+let typingTimer = 0;
+
+const WIDTH = 960;
+const HEIGHT = 540;
+
+// IMAGES
+const driveImg = new Image(); driveImg.src = 'drive.png';
+const getdownImg = new Image(); getdownImg.src = 'getdown.png';
+const fightImg = new Image(); fightImg.src = 'fight.png';
+const boyImg = new Image(); boyImg.src = 'boy1shoot.png';
+const zombieImg = new Image(); zombieImg.src = 'zombie.png';
+const rtoImg = new Image(); rtoImg.src = 'rto.png';
+const rtoShockedImg = new Image(); rtoShockedImg.src = 'rto-shocked.png';
+
+// AUDIO
+const horn = new Audio('haat_be.mp3');
+horn.volume = 0.8;
+
+// GAME VARS
+let carSpeed = 6;
+let roadOffset = 0;
+let distance = 0;
+let startTime = 0;
+
+let player = { x: 180, y: 340, vy: 0, width: 64, height: 92 };
+let bullets = [];
+let zombies = [];
+let score = 0;
+let gameRunning = true;
+let keys = {};
+const GROUND = 380;
+const GRAVITY = 0.65;
+
+// RTO - NOW ONLY ONCE at 400km with cinematic moment
+let rto = { 
+  active: false, 
+  x: WIDTH + 120, 
+  y: 228, 
+  phase: 'normal',     // normal → stopped → shocked → flying
+  timer: 0,
+  zoom: 1.0
+};
+
+function typeCaption(text, speed = 45) {
+  captionEl.textContent = "";
+  clearInterval(typingTimer);
+  let i = 0;
+  typingTimer = setInterval(() => {
+    if (i < text.length) captionEl.textContent += text[i++];
+    else clearInterval(typingTimer);
+  }, speed);
+}
+
+function changeScene(newScene) {
+  scene = newScene;
+  fade = 0;
+  captionEl.textContent = "";
+
+  if (newScene === 'driving') {
+    startTime = Date.now();
+    carSpeed = 6;
+    roadOffset = 0;
+    distance = 0;
+    rto.active = false;
+    typeCaption("HEADING TO JUHU BEACH\nTAP RIGHT = SPEED UP\nTAP LEFT = BRAKE\n\nTAP SCREEN TO PLAY", 55);
+  }
+  if (newScene === 'getdown') typeCaption("GOTTA FIGHT GUYS\n\nTAP or PRESS ENTER", 35);
+  if (newScene === 'fight') typeCaption("4 SURVIVORS ARMED\n\nTAP or PRESS ENTER", 35);
+  if (newScene === 'gameplay') {
+    player.x = 180; player.y = GROUND - player.height; player.vy = 0;
+    bullets = []; zombies = []; score = 0; gameRunning = true;
+    typeCaption("← → MOVE   UPPER TAP = JUMP\nLOWER TAP = SHOOT", 40);
+  }
+}
+
+// ====================== UPDATE ======================
+function update() {
+  gameFrame++;
+
+  if (scene === 'driving') {
+    // Controls (keyboard + mobile already handled below)
+    if (keys['ArrowUp'] || keys['ArrowRight']) carSpeed = Math.min(carSpeed + 0.32, 13.5);
+    if (keys['ArrowLeft']) carSpeed = Math.max(carSpeed - 0.45, 2);
+
+    roadOffset -= carSpeed * 2.4;
+    distance += carSpeed * 0.048;
+
+    // === RTO ONLY ONCE at ~400 km ===
+    if (distance > 400 && !rto.active) {
+      rto.active = true;
+      rto.phase = 'normal';
+      rto.x = WIDTH + 80;
+      rto.y = 228;
+      rto.timer = Date.now();
+      rto.zoom = 1.0;
+      carSpeed = 1.8;           // slow down naturally
+      horn.currentTime = 0;
+      horn.play();
+    }
+
+    if (rto.active) {
+      const elapsed = Date.now() - rto.timer;
+
+      if (rto.phase === 'normal' && elapsed > 900) {
+        rto.phase = 'stopped';
+        carSpeed = 0;                     // car fully stops
+      }
+      if (rto.phase === 'stopped' && elapsed > 2800) {
+        rto.phase = 'shocked';
+        horn.currentTime = 0;
+        horn.play();
+      }
+      if (rto.phase === 'shocked' && elapsed > 4200) {
+        rto.phase = 'flying';
+        carSpeed = 11;                    // suddenly speed off
+      }
+
+      // Movement logic per phase
+      if (rto.phase === 'normal' || rto.phase === 'stopped') {
+        rto.x -= 1.2;
+      } 
+      else if (rto.phase === 'shocked') {
+        rto.x += 0.8;
+        rto.y -= 0.6;
+      } 
+      else if (rto.phase === 'flying') {
+        rto.x += carSpeed * 1.1;
+        rto.y -= 3.2;
+        rto.zoom = Math.max(0.6, rto.zoom - 0.008);
+        if (rto.y < -150) rto.active = false;   // remove after flying away
+      }
+    }
+
+    if (Date.now() - startTime > 20000) changeScene('blackout1');
+  }
+
+  // Blackout fades
+  if (scene === 'blackout1' || scene === 'blackout2') {
+    fade += 0.13;
+    if (fade >= 1) changeScene(scene === 'blackout1' ? 'getdown' : 'fight');
+  }
+
+  // Gameplay (same as before)
+  if (scene === 'gameplay' && gameRunning) {
+    if (keys['ArrowLeft']) player.x -= 5.8;
+    if (keys['ArrowRight']) player.x += 5.8;
+    player.x = Math.max(40, Math.min(WIDTH - 110, player.x));
+
+    if (keys['ArrowUp'] && player.y >= GROUND - player.height) player.vy = -16.5;
+
+    player.vy += GRAVITY;
+    player.y += player.vy;
+    if (player.y > GROUND - player.height) { player.y = GROUND - player.height; player.vy = 0; }
+
+    if (keys[' '] && Date.now() % 260 < 18) bullets.push({ x: player.x + 58, y: player.y + 36 });
+
+    for (let i = bullets.length - 1; i >= 0; i--) {
+      bullets[i].x += 12.8;
+      if (bullets[i].x > WIDTH + 20) bullets.splice(i, 1);
+    }
+
+    if (Math.random() < 0.045) zombies.push({ x: WIDTH + 50, y: GROUND - 76 });
+
+    for (let i = zombies.length - 1; i >= 0; i--) {
+      let z = zombies[i];
+      z.x -= 4.1;
+
+      for (let j = bullets.length - 1; j >= 0; j--) {
+        let b = bullets[j];
+        if (b.x > z.x + 6 && b.x < z.x + 46 && b.y > z.y + 14 && b.y < z.y + 64) {
+          zombies.splice(i, 1);
+          bullets.splice(j, 1);
+          score += 100;
+          break;
+        }
+      }
+
+      if (z.x < player.x + 48 && z.x + 48 > player.x + 12 && z.y + 70 > player.y + 20) {
+        gameRunning = false;
+        setTimeout(() => changeScene('gameover'), 700);
+      }
+      if (z.x < -80) zombies.splice(i, 1);
+    }
+  }
+}
+
+// ====================== DRAW ======================
+function draw() {
+  ctx.clearRect(0, 0, WIDTH, HEIGHT);
+
+  if (scene === 'start') {
+    ctx.fillStyle = '#0a0f1f'; ctx.fillRect(0,0,WIDTH,HEIGHT);
+    ctx.fillStyle = '#00ffcc';
+    ctx.font = 'bold 62px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('JUHU APOCALYPSE', WIDTH/2, 170);
+    ctx.font = '22px Courier New';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('YOU ARE DRIVING OFF TO JUHU BEACH...', WIDTH/2, 260);
+    ctx.fillText('PRESS SPACE or TAP TO START', WIDTH/2, 340);
+  }
+
+  else if (scene === 'driving') {
+    let grad = ctx.createLinearGradient(0,0,0,HEIGHT);
+    grad.addColorStop(0,'#112244'); grad.addColorStop(1,'#1e3a5f');
+    ctx.fillStyle = grad; ctx.fillRect(0,0,WIDTH,HEIGHT);
+    ctx.fillStyle = '#1a2538'; ctx.fillRect(0,310,WIDTH,HEIGHT);
+
+    // Yellow dashed center line
+    ctx.strokeStyle = '#ffdd44';
+    ctx.lineWidth = 7;
+    for (let i = -180; i < WIDTH + 180; i += 82) {
+      let x = (i + roadOffset) % 168 - 25;
+      ctx.beginPath();
+      ctx.moveTo(x, 370);
+      ctx.lineTo(x + 54, 370);
+      ctx.stroke();
+    }
+
+    // Thin side lines
+    ctx.strokeStyle = '#ffffff66';
+    ctx.lineWidth = 2.4;
+    for (let i = -120; i < WIDTH + 120; i += 37) {
+      let x = (i + roadOffset * 2.3) % 82 - 18;
+      ctx.beginPath(); ctx.moveTo(x, 323); ctx.lineTo(x + 26, 323); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x, 412); ctx.lineTo(x + 26, 412); ctx.stroke();
+    }
+
+    // Draw Car
+    ctx.save();
+    ctx.translate(255, 275);
+    if (carSpeed > 8) ctx.scale(1.04, 0.97);
+    if (driveImg.complete) ctx.drawImage(driveImg, -135, -92, 310, 175);
+    ctx.restore();
+
+    // RTO with cinematic zoom when stopped
+    if (rto.active && rto.phase !== 'flying') {
+      let zoom = (rto.phase === 'stopped') ? 1.35 : 1.0;
+      let drawX = rto.x;
+      let drawY = rto.y - (rto.phase === 'stopped' ? 25 : 0);
+
+      ctx.save();
+      ctx.translate(drawX + 42, drawY + 65);
+      ctx.scale(zoom, zoom);
+      ctx.translate(-42, -65);
+
+      let img = (rto.phase === 'shocked' || rto.phase === 'flying') ? rtoShockedImg : rtoImg;
+      if (img.complete) ctx.drawImage(img, 0, 0, 85, 125);
+      ctx.restore();
+    }
+
+    // Distance
+    ctx.font = '24px Courier New';
+    ctx.fillStyle = '#00ffcc';
+    ctx.fillText(`DISTANCE: ${Math.floor(distance)} km`, 45, 65);
+  }
+
+  else if (scene === 'getdown') {
+    if (getdownImg.complete) ctx.drawImage(getdownImg, 0, 0, WIDTH, HEIGHT);
+  }
+  else if (scene === 'fight') {
+    if (fightImg.complete) ctx.drawImage(fightImg, 0, 0, WIDTH, HEIGHT);
+  }
+
+  else if (scene === 'gameplay') {
+    let sky = ctx.createLinearGradient(0,0,0,280);
+    sky.addColorStop(0,'#0a1f3d'); sky.addColorStop(1,'#1e4a7a');
+    ctx.fillStyle = sky; ctx.fillRect(0,0,WIDTH,HEIGHT);
+    ctx.fillStyle = '#0b3566'; ctx.fillRect(0,195,WIDTH,165);
+
+    ctx.strokeStyle = '#1e6fa8'; ctx.lineWidth = 4.5;
+    for (let w = 0; w < 5; w++) {
+      let baseY = 215 + w * 23;
+      ctx.beginPath();
+      ctx.moveTo(0, baseY);
+      for (let x = 0; x <= WIDTH; x += 28) {
+        ctx.lineTo(x, baseY + Math.sin((x / 38) + gameFrame / 11 + w * 1.2) * 9);
+      }
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = '#d9be8f'; ctx.fillRect(0,360,WIDTH,HEIGHT-360);
+
+    if (boyImg.complete) ctx.drawImage(boyImg, player.x, player.y, player.width, player.height);
+
+    ctx.shadowColor = '#ffff00'; ctx.shadowBlur = 14;
+    ctx.fillStyle = '#ffff66';
+    for (let b of bullets) ctx.fillRect(b.x, b.y-3, 19, 7);
+    ctx.shadowBlur = 0;
+
+    for (let i = 0; i < zombies.length; i++) {
+      let z = zombies[i];
+      let bob = Math.sin(gameFrame / 6.5 + i) * 5.5;
+      let shake = Math.sin(gameFrame / 3.2 + i) * 2.8;
+      if (zombieImg.complete) {
+        ctx.save();
+        ctx.translate(z.x + 26 + shake, z.y + 39 + bob);
+        ctx.rotate(Math.sin(gameFrame / 9 + i) * 0.09);
+        ctx.drawImage(zombieImg, -26, -39, 52, 78);
+        ctx.restore();
+      }
+    }
+  }
+
+  else if (scene === 'gameover') {
+    ctx.fillStyle = 'rgba(0,0,0,0.88)'; ctx.fillRect(0,0,WIDTH,HEIGHT);
+    ctx.font = 'bold 68px Courier New';
+    ctx.fillStyle = '#ff3366';
+    ctx.textAlign = 'center';
+    ctx.fillText('GAME OVER', WIDTH/2, 190);
+    ctx.font = '28px Courier New';
+    ctx.fillStyle = '#fff';
+    ctx.fillText(`FINAL KILLS: ${score}`, WIDTH/2, 270);
+    ctx.fillText('TAP or PRESS ENTER TO RESTART', WIDTH/2, 350);
+  }
+
+  if (fade > 0) {
+    ctx.fillStyle = `rgba(0,0,0,${Math.min(fade,1)})`;
+    ctx.fillRect(0,0,WIDTH,HEIGHT);
+  }
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// ====================== CONTROLS ======================
+document.addEventListener('keydown', e => {
+  keys[e.key] = true;
+  if (e.key === ' ') { e.preventDefault(); 
+    if (scene === 'start') changeScene('driving');
+    if (scene === 'gameover') location.reload();
+  }
+  if (e.key === 'Enter') {
+    if (scene === 'getdown') changeScene('blackout2');
+    if (scene === 'fight') changeScene('gameplay');
+    if (scene === 'gameover') location.reload();
+  }
+});
+
+document.addEventListener('keyup', e => keys[e.key] = false);
+
+// Mobile Touch (same as before)
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const tx = (e.touches[0].clientX - rect.left) * (WIDTH / rect.width);
+  const ty = (e.touches[0].clientY - rect.top) * (HEIGHT / rect.height);
+
+  if (scene === 'start') changeScene('driving');
+  if (scene === 'gameover') location.reload();
+  if (scene === 'getdown') changeScene('blackout2');
+  if (scene === 'fight') changeScene('gameplay');
+
+  if (scene === 'driving') {
+    if (tx < WIDTH * 0.45) carSpeed = Math.max(2, carSpeed - 2.8);
+    else carSpeed = Math.min(13.5, carSpeed + 2.8);
+  }
+
+  if (scene === 'gameplay' && gameRunning) {
+    if (ty < HEIGHT * 0.45) {
+      if (player.y >= GROUND - player.height) player.vy = -16.5;
+    } else {
+      bullets.push({ x: player.x + 58, y: player.y + 36 });
+    }
+  }
+});
+
+canvas.addEventListener('click', () => {
+  if (scene === 'gameplay' && gameRunning) {
+    bullets.push({ x: player.x + 58, y: player.y + 36 });
+  }
+});
+
+// ====================== START ======================
+changeScene('start');
+typeCaption("MUMBAI 2026\nYOU ARE DRIVING OFF TO JUHU BEACH...\n\nPRESS SPACE or TAP TO START", 55);
+
+loop();
+</script>
+
+</body>
+</html>
